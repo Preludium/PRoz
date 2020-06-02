@@ -2,9 +2,9 @@
 
 MPI_Datatype MPI_PACKAGE_T;
 MPI_Status status;
-pthread_mutex_t lock;
+// pthread_mutex_t lock;
 
-int size, rank;
+int size, tid;
 
 
 void init();
@@ -32,14 +32,19 @@ void init() {
     MPI_Type_create_struct(nitems, blocklengths, offsets, types, &MPI_PACKAGE_T);
     MPI_Type_commit(&MPI_PACKAGE_T);
 
-    MPI_Comm_size( MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &tid);
 }
 
 void mainLoop() {
-
+    // packet_t packet;
+    
+    // while(1) {
+    //     MPI_Recv(&packet, 1, MPI_PACKAGE_T, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+    // }
 }
 
 void finalize() {
-
+    MPI_Type_free(&MPI_PACKAGE_T);
+    MPI_Finalize();
 }

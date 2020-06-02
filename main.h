@@ -1,13 +1,13 @@
 #ifndef MAINH
 #define MAINH
 
-#include <iostream>
-#include <cstdlib>
+// #include <iostream>
+// #include <cstdlib>
 #include <mpi.h>
 #include <unistd.h>
 #include <pthread.h>
-#include "process.h"
-using namespace std;
+// #include "process.h"
+// using namespace std;
 
 
 #define RED   "\x1B[31m"
@@ -23,6 +23,12 @@ using namespace std;
 #define MAX_ELEV 5
 
 #define MSG_SIZE 64
+
+typedef struct { // struktura requestow
+    int ts;
+    int src;
+    int data;
+} packet_t;
 
 enum message {ACK, REQ_ELEV, REQ_ROOM, RES_ELEV, RES_ROOM};
 

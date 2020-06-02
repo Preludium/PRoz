@@ -2,8 +2,8 @@
 #define PROCESSH
 
 #include <iostream>
-#include <cstdlib>
 using namespace std;
+
 
 class Process {
     int headElev, headRoom, tailElev, tailRoom, trashes, ackCounter;
@@ -31,5 +31,9 @@ public:
     void decreaseHeadRoom(int rooms);
     void decreaseTailRoom(int rooms);
 };
+
+// typedef struct {
+//     int headElev, headRoom, tailElev, tailRoom, trashes, ackCounter;
+// } Process;
 
 #endif
