@@ -1,13 +1,13 @@
 #ifndef MAINH
 #define MAINH
 
-// #include <iostream>
+#include <iostream>
 // #include <cstdlib>
 #include <mpi.h>
 #include <unistd.h>
 #include <pthread.h>
-// #include "process.h"
-// using namespace std;
+
+using namespace std;
 
 
 #define RED   "\x1B[31m"
@@ -24,12 +24,23 @@
 
 #define MSG_SIZE 64
 
-typedef struct { // struktura requestow
-    int ts;
-    int src;
-    int data;
+typedef enum {Running, Finish} state_t;
+extern state_t state;
+
+// struktura requestow
+typedef struct { 
+    int ts; // timestamp zegara lamporta
+    int src; // tid wysyłającego, nie wiem czy potrzebne 
+    int data; // przesyłane dane
 } packet_t;
 
-enum message {ACK, REQ_ELEV, REQ_ROOM, RES_ELEV, RES_ROOM};
+extern MPI_Datatype MPI_PACKET_T;
+
+enum Message {ACK, REQ_ELEV, REQ_ROOM, RES_ELEV, RES_ROOM, FINISH};
+
+
+void changeState( state_t );
+void ackReceived();
+void changeResources(int, int, int);
 
 #endif 

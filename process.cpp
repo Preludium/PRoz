@@ -1,16 +1,14 @@
 #include "process.h"
+#include "main.h"
 
 Process::Process() {
-
-}
-
-Process::Process(int headElev, int headRoom) {
-    this->headElev = headElev;
-    this->headRoom = headRoom;
+    this->headElev = MAX_ELEV;
+    this->headRoom = MAX_ROOM;
     this->tailElev = 0;
     this->tailRoom = 0;
-    this->trashes = 1 + rand() % (headRoom - 1);
+    this->trashes = 1 + rand() % (this->headRoom - 1);
     this->ackCounter = 0;
+    this->timeStamp = 0; // ?
 }
 
 int Process::getHeadElev() {
@@ -57,8 +55,28 @@ int Process::getAckCounter() {
     return this->ackCounter;
 }
 
-void Process::setAckCounter(int num) {
-    this->ackCounter = num;
+void Process::setAckCounter(int ackCounter) {
+    this->ackCounter = ackCounter;
+}
+
+int Process::getTimeStamp() {
+    return this->timeStamp;
+}
+
+void Process::setTimeStamp(int timeStamp) {
+    this->timeStamp = timeStamp;
+}
+
+void Process::incrementTimeStamp() {
+    this->timeStamp++;
+}
+
+void Process::incrementAckCounter() {
+    this->ackCounter++;
+}
+
+void Process::clearAckCounter() {
+    this->ackCounter = 0;
 }
 
 void Process::incrementHeadElev() {
