@@ -3,10 +3,11 @@
 
 void *startCommunicationThread(void *ptr) {
     MPI_Status status;
-    packet_t packet;
+    Packet packet;
 
-    while (state != Finish) { // TODO: add state when process requests nothing
-
+    while (state != END) { // TODO: add state when process requests nothing
+        
+        // add mutex
         MPI_Recv( &packet, 1, MPI_PACKET_T, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
         switch (status.MPI_TAG) {
@@ -15,23 +16,14 @@ void *startCommunicationThread(void *ptr) {
                 break;
 
             case Message::REQ_ELEV:
-                changeResources(status.MPI_TAG, packet.data, packet.ts);
-                break;
-
             case Message::REQ_ROOM:
-                changeResources(status.MPI_TAG, packet.data, packet.ts);
-                break;
-
             case Message::RES_ELEV:
-                changeResources(status.MPI_TAG, packet.data, packet.ts);
-                break;
-
             case Message::RES_ROOM:
-                changeResources(status.MPI_TAG, packet.data, packet.ts);
+                changeResources(status.MPI_TAG, packet);
                 break;
 
             case Message::FINISH:
-                changeState(Finish);
+                changeState(END);
                 break;
 
             default:

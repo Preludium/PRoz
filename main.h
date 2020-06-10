@@ -24,23 +24,42 @@ using namespace std;
 
 #define MSG_SIZE 64
 
-typedef enum {Running, Finish} state_t;
-extern state_t state;
 
-// struktura requestow
-typedef struct { 
-    int ts; // timestamp zegara lamporta
-    int src; // tid wysyłającego, nie wiem czy potrzebne 
+class Packet { 
+public:
+    int ts; // lamport clock timestamp 
+    int src; // sender tid, probably unnecessary 
     int data; // przesyłane dane
-} packet_t;
+};
+
+enum State { // in proper order
+    INIT,
+    WAIT_ACK_ROOM,
+    WAIT_ROOM,
+    WAIT_ACK_ELEV,
+    WAIT_ELEV,
+    IN_ELEV,
+    IN_ROOM,
+    WAIT_ACK_ELEV_BACK,
+    WAIT_ELEV_BACK,
+    IN_ELEV_BACK,
+    END
+};
+
+enum Message {
+    ACK, 
+    REQ_ELEV, 
+    REQ_ROOM, 
+    RES_ELEV, 
+    RES_ROOM, 
+    FINISH
+};
 
 extern MPI_Datatype MPI_PACKET_T;
+extern State state;
 
-enum Message {ACK, REQ_ELEV, REQ_ROOM, RES_ELEV, RES_ROOM, FINISH};
-
-
-void changeState( state_t );
+void changeState( State );
 void ackReceived();
-void changeResources(int, int, int);
+void changeResources(int, Packet);
 
 #endif 

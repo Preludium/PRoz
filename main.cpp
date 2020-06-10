@@ -7,14 +7,14 @@ MPI_Status status;
 
 int size, tid;
 pthread_t threadCom;
-state_t state = Running;
+State state = INIT;
 pthread_mutex_t stateMut = PTHREAD_MUTEX_INITIALIZER;
 Process process;
 
 void init();
 void mainLoop();
 void finalize();
-void sendPacket();
+void sendPacket(Packet*, int);
 void changeState();
 void ackReceived();
 void changeResources();
@@ -33,9 +33,9 @@ void init() {
     MPI_Datatype types[3] = {MPI_INT, MPI_INT, MPI_INT};
 
     MPI_Aint offsets[3]; 
-    offsets[0] = offsetof(packet_t, ts);
-    offsets[1] = offsetof(packet_t, src);
-    offsets[2] = offsetof(packet_t, data);
+    offsets[0] = offsetof(Packet, ts);
+    offsets[1] = offsetof(Packet, src);
+    offsets[2] = offsetof(Packet, data);
 
     MPI_Type_create_struct(nitems, blocklengths, offsets, types, &MPI_PACKET_T);
     MPI_Type_commit(&MPI_PACKET_T);
@@ -49,7 +49,7 @@ void init() {
 
 void mainLoop() {
     process = Process();
-    packet_t *packet = static_cast<packet_t*>(malloc(sizeof(packet_t))); 
+    Packet *packet = new Packet();
     packet->data = process.getTrashes();
     sendPacket(packet, Message::REQ_ROOM);
 
@@ -73,27 +73,25 @@ void finalize() {
     MPI_Finalize();
 }
 
-void sendPacket(packet_t *packet, int tag, int destination = MPI_ANY_SOURCE)
-{
-
+// add mutex
+void sendPacket(Packet *packet, int tag) {
     int freePacket = false;
     if (packet == 0) {
-        packet = static_cast<packet_t*>(malloc(sizeof(packet_t))); 
+        packet = new Packet();
         freePacket = true;
     }
 
     process.incrementTimeStamp();
     packet->src = tid;
     packet->ts = process.getTimeStamp();
-    MPI_Send( packet, 1, MPI_PACKET_T, destination, tag, MPI_COMM_WORLD);
+    MPI_Send( packet, 1, MPI_PACKET_T, MPI_ANY_SOURCE, tag, MPI_COMM_WORLD);
     if (freePacket) 
         free(packet);
 }
 
-void changeState( state_t newState )
-{
+void changeState( State newState ) {
     pthread_mutex_lock( &stateMut );
-    if (state == Finish) { 
+    if (state == END) { 
 	    pthread_mutex_unlock( &stateMut );
         return;
     }
@@ -115,37 +113,84 @@ void setTimeStamp(int ts) {
     process.setTimeStamp(max(ts, process.getTimeStamp()) + 1);
 }
 
-void changeResources(int msg, int data, int ts) {
+void sendAck(int destination) {
+    Packet *packet = new Packet();
+    packet->src = tid;
+    packet->ts = process.getTimeStamp();
+    MPI_Send( packet, 1, MPI_PACKET_T, destination, Message::ACK, MPI_COMM_WORLD);
+}
+
+void changeResources(int msg, Packet packet) {
+    int ts = packet.ts, data = packet.data, src = packet.src;
+    
     switch (msg) {
-        case Message::REQ_ELEV:
-            if (process.getTimeStamp() < ts) // it means that incoming packet is in front of this process in Q
-                process.decrementHeadElev();
-            else
-                process.incrementTailElev();
-
-            setTimeStamp(ts);
-            break;
-
         case Message::REQ_ROOM:
-            if (process.getTimeStamp() < ts)
-                process.decreaseHeadRoom(data);
-            else
-                process.increaseTailRoom(data);
-
-            setTimeStamp(ts);
+            switch (state) {
+                case INIT:
+                case IN_ELEV_BACK:
+                    process.decreaseHeadRoom(data);
+                    break;
+                case WAIT_ACK_ROOM:
+                    if (process.getTimeStamp() < ts) // it means that incoming packet is in front of this process in Q
+                        process.decreaseHeadRoom(data);
+                    else
+                        process.increaseTailRoom(data);
+                    break;
+                case WAIT_ROOM:
+                case WAIT_ACK_ELEV:
+                case WAIT_ELEV:
+                case IN_ELEV:
+                case IN_ROOM:
+                case WAIT_ACK_ELEV_BACK:
+                case WAIT_ELEV_BACK:
+                    process.increaseTailRoom(data);
+                    break;
+            }
             break;
 
-        case Message::RES_ELEV:
-            process.incrementHeadElev();
-            setTimeStamp(ts);
+        case Message::REQ_ELEV:
+            switch (state) {
+                case INIT:
+                case WAIT_ACK_ROOM:
+                case WAIT_ROOM:
+                case IN_ROOM:
+                    process.decrementHeadElev();
+                    break;
+                case WAIT_ACK_ELEV:
+                case WAIT_ACK_ELEV_BACK:
+                    if (process.getTimeStamp() < ts) // it means that incoming packet is in front of this process in Q
+                        process.decrementHeadElev();
+                    else
+                        process.incrementTailElev();
+                    break;
+                case WAIT_ELEV:
+                case IN_ELEV:
+                case WAIT_ELEV_BACK:
+                case IN_ELEV_BACK:
+                    process.incrementTailElev();
+                    break;
+            }
             break;
 
         case Message::RES_ROOM:
-            process.increaseHeadRoom(data);
-            setTimeStamp(ts);
+            if (state == WAIT_ACK_ROOM) {
+                process.increaseHeadRoom(data);
+                // unlock mutex and proceed to state WAIT_ACK_ELEV
+            } else 
+                process.increaseHeadRoom(data);
             break;
-        
-        default:
+
+        case Message::RES_ELEV:
+            if (state == WAIT_ELEV) {
+                process.incrementHeadElev();
+                // unlock mutex and proceed to state IN_ELEV
+            } else if (state == WAIT_ELEV_BACK) {
+                process.incrementHeadElev();
+                // unlock mutex and proceed to state IN_ELEV_BACK
+            } else 
+                process.incrementHeadElev();
             break;
     }
+    setTimeStamp(ts);
+    sendAck(src);
 }
