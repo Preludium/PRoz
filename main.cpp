@@ -1,6 +1,7 @@
 #include "main.h"
 #include "process.h"
 #include "communicationThread.h"
+#include <string>
 
 MPI_Datatype MPI_PACKET_T;
 MPI_Status status;
@@ -14,10 +15,13 @@ Process process;
 void init();
 void mainLoop();
 void finalize();
-void sendPacket(Packet*, int);
+void sendPacket(Packet*, int, int);
 void changeState();
 void ackReceived();
 void changeResources();
+void askForResource(Packet*, int);
+void printDebugInfo(string);
+string getResourceString(int);
 
 int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
@@ -51,7 +55,8 @@ void mainLoop() {
     process = Process();
     Packet *packet = new Packet();
     packet->data = process.getTrashes();
-    sendPacket(packet, Message::REQ_ROOM);
+
+    askForResource(packet, Message::REQ_ROOM);
 
     // next: get elevator 
     // wait for resources
@@ -67,14 +72,14 @@ void mainLoop() {
 }
 
 void finalize() {
-    cout << "Waiting for communication thread" << endl;
+    //cout << "Waiting for communication thread" << endl;
     pthread_join(threadCom, NULL);
     MPI_Type_free(&MPI_PACKET_T);
     MPI_Finalize();
 }
 
 // add mutex
-void sendPacket(Packet *packet, int tag) {
+void sendPacket(Packet *packet, int destination, int tag) {
     int freePacket = false;
     if (packet == 0) {
         packet = new Packet();
@@ -84,7 +89,7 @@ void sendPacket(Packet *packet, int tag) {
     process.incrementTimeStamp();
     packet->src = tid;
     packet->ts = process.getTimeStamp();
-    MPI_Send( packet, 1, MPI_PACKET_T, MPI_ANY_SOURCE, tag, MPI_COMM_WORLD);
+    MPI_Send(packet, 1, MPI_PACKET_T, destination, tag, MPI_COMM_WORLD);
     if (freePacket) 
         free(packet);
 }
@@ -105,7 +110,7 @@ void ackReceived() {
     // unlock proper mutex
 
     process.incrementAckCounter();
-    if (process.getAckCounter() == size - 1); // make sure if "size" is number of processes
+    if (process.getAckCounter() == size - 1); // make sure if "size" is number of processes //K - imho yes
         // unlockmutegz 
 }
 
@@ -118,6 +123,25 @@ void sendAck(int destination) {
     packet->src = tid;
     packet->ts = process.getTimeStamp();
     MPI_Send( packet, 1, MPI_PACKET_T, destination, Message::ACK, MPI_COMM_WORLD);
+}
+
+void askForResource(Packet *packet, int tag) {
+    printDebugInfo("Składam żądania o " + getResourceString(tag));
+    for (int i = 0; i < size; ++i) {
+        if (i != tid) sendPacket(packet, i, tag);
+    }
+}
+
+void printDebugInfo(string msg) {
+    cout << "[" << tid << "] " << "[" << process.getTimeStamp() << "] ";
+    cout << msg << endl;
+}
+
+string getResourceString(int resTag) {
+    string out = "";
+    if (resTag == Message::REQ_ROOM || resTag == Message::RES_ROOM) out = "pokoje";
+    else if (resTag == Message::REQ_ELEV || resTag == Message::RES_ELEV) out = "windy";
+    return out;
 }
 
 void changeResources(int msg, Packet packet) {

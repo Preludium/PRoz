@@ -8,7 +8,7 @@ Process::Process() {
     this->tailRoom = 0;
     this->trashes = 1 + rand() % (this->headRoom - 1);
     this->ackCounter = 0;
-    this->timeStamp = 0; // ?
+    this->timeStamp = 0; // ? //K - imho good
 }
 
 int Process::getHeadElev() {
