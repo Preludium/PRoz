@@ -29,17 +29,13 @@ public:
     void setAckCounter(int ackCounter);
     int getTimeStamp();
     void setTimeStamp(int timeStamp);
-
     void incrementTimeStamp();
-
     void incrementAckCounter();
     void clearAckCounter();
-
     void incrementHeadElev();
     void incrementTailElev();
     void decrementHeadElev();
     void decrementTailElev();
-
     void increaseHeadRoom(int rooms);
     void increaseTailRoom(int rooms);
     void decreaseHeadRoom(int rooms);

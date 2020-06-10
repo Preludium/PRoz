@@ -21,7 +21,6 @@ using namespace std;
 
 #define MAX_ROOM 10
 #define MAX_ELEV 5
-
 #define MSG_SIZE 64
 
 
@@ -29,7 +28,7 @@ class Packet {
 public:
     int ts; // lamport clock timestamp 
     int src; // sender tid, probably unnecessary 
-    int data; // przesyłane dane
+    int data; 
 };
 
 enum State { // in proper order
@@ -61,6 +60,5 @@ extern State state;
 void changeState( State );
 void ackReceived();
 void changeResources(int, Packet);
-
 
 #endif 

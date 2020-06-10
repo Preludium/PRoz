@@ -10,7 +10,12 @@ int size, tid;
 pthread_t threadCom;
 State state = INIT;
 pthread_mutex_t stateMut = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t resourceMut = PTHREAD_MUTEX_INITIALIZER;
 Process process;
+
+// pROBABLy need to add check_thread_support from "magazyn" but dunno what it does
+// we can skip WAIT_ACK states but need to check AckCounter in changeResource() for WAIT_[...] state
+// dunno if its worth it
 
 void init();
 void mainLoop();
@@ -32,9 +37,9 @@ int main(int argc, char **argv) {
 }
 
 void init() {
-    const int nitems=3;
-    int blocklengths[3] = {1,1,1};
-    MPI_Datatype types[3] = {MPI_INT, MPI_INT, MPI_INT};
+    const int nitems = 3;
+    int blocklengths[3] = { 1, 1, 1 };
+    MPI_Datatype types[3] = { MPI_INT, MPI_INT, MPI_INT };
 
     MPI_Aint offsets[3]; 
     offsets[0] = offsetof(Packet, ts);
@@ -57,6 +62,14 @@ void mainLoop() {
     packet->data = process.getTrashes();
 
     askForResource(packet, Message::REQ_ROOM);
+    changeState(State::WAIT_ACK_ROOM);
+    // wait for all ACKs somehow xD
+    changeState(State::WAIT_ROOM);
+    // check room resource
+    // decrease room - RESOURCE MUTEX
+    changeState(State::WAIT_ACK_ELEV);
+
+
 
     // next: get elevator 
     // wait for resources
@@ -78,15 +91,15 @@ void finalize() {
     MPI_Finalize();
 }
 
-// add mutex
 void sendPacket(Packet *packet, int destination, int tag) {
     int freePacket = false;
     if (packet == 0) {
         packet = new Packet();
         freePacket = true;
     }
-
-    process.incrementTimeStamp();
+    pthread_mutex_lock( &resourceMut );
+    process.incrementTimeStamp(); // mutegz 
+    pthread_mutex_unlock( &resourceMut );
     packet->src = tid;
     packet->ts = process.getTimeStamp();
     MPI_Send(packet, 1, MPI_PACKET_T, destination, tag, MPI_COMM_WORLD);
@@ -105,16 +118,14 @@ void changeState( State newState ) {
 }
 
 void ackReceived() {
-    // increment process ack counter
-    // if ack counter == num of processes - 1 then 
-    // unlock proper mutex
-
-    process.incrementAckCounter();
-    if (process.getAckCounter() == size - 1); // make sure if "size" is number of processes //K - imho yes
-        // unlockmutegz 
+    pthread_mutex_lock( &resourceMut );
+    process.incrementAckCounter(); // probably lock mutegz
+    pthread_mutex_unlock( &resourceMut );
+    if (process.getAckCounter() == size - 1);
+	    pthread_mutex_unlock( &stateMut );
 }
 
-void setTimeStamp(int ts) {
+void setTimeStamp(int ts) { // DO NOT USE IF NOT IN RESOURCE MUTEX AREA
     process.setTimeStamp(max(ts, process.getTimeStamp()) + 1);
 }
 
@@ -127,9 +138,9 @@ void sendAck(int destination) {
 
 void askForResource(Packet *packet, int tag) {
     printDebugInfo("Składam żądania o " + getResourceString(tag));
-    for (int i = 0; i < size; ++i) {
-        if (i != tid) sendPacket(packet, i, tag);
-    }
+    for (int i = 0; i < size; ++i)
+        if (i != tid) 
+            sendPacket(packet, i, tag);
 }
 
 void printDebugInfo(string msg) {
@@ -139,14 +150,17 @@ void printDebugInfo(string msg) {
 
 string getResourceString(int resTag) {
     string out = "";
-    if (resTag == Message::REQ_ROOM || resTag == Message::RES_ROOM) out = "pokoje";
-    else if (resTag == Message::REQ_ELEV || resTag == Message::RES_ELEV) out = "windy";
+    if (resTag == Message::REQ_ROOM || resTag == Message::RES_ROOM) 
+        out = "pokoje";
+    else if (resTag == Message::REQ_ELEV || resTag == Message::RES_ELEV) 
+        out = "windy";
     return out;
 }
 
 void changeResources(int msg, Packet packet) {
+    pthread_mutex_lock( &resourceMut );
     int ts = packet.ts, data = packet.data, src = packet.src;
-    
+
     switch (msg) {
         case Message::REQ_ROOM:
             switch (state) {
@@ -200,6 +214,7 @@ void changeResources(int msg, Packet packet) {
             if (state == WAIT_ACK_ROOM) {
                 process.increaseHeadRoom(data);
                 // unlock mutex and proceed to state WAIT_ACK_ELEV
+                pthread_mutex_unlock( &stateMut );
             } else 
                 process.increaseHeadRoom(data);
             break;
@@ -208,13 +223,16 @@ void changeResources(int msg, Packet packet) {
             if (state == WAIT_ELEV) {
                 process.incrementHeadElev();
                 // unlock mutex and proceed to state IN_ELEV
+                pthread_mutex_unlock( &stateMut );
             } else if (state == WAIT_ELEV_BACK) {
                 process.incrementHeadElev();
                 // unlock mutex and proceed to state IN_ELEV_BACK
+                pthread_mutex_unlock( &stateMut );
             } else 
                 process.incrementHeadElev();
             break;
     }
     setTimeStamp(ts);
+    pthread_mutex_unlock( &resourceMut );
     sendAck(src);
 }

@@ -5,9 +5,7 @@ void *startCommunicationThread(void *ptr) {
     MPI_Status status;
     Packet packet;
 
-    while (state != END) { // TODO: add state when process requests nothing
-        
-        // add mutex
+    while (state != END) {
         MPI_Recv( &packet, 1, MPI_PACKET_T, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
         switch (status.MPI_TAG) {
@@ -24,9 +22,6 @@ void *startCommunicationThread(void *ptr) {
 
             case Message::FINISH:
                 changeState(END);
-                break;
-
-            default:
                 break;
         }
     }
