@@ -89,7 +89,7 @@ void mainLoop() {
     changeState(State::IN_ROOM);
     printDebugInfo(">SK< Zajmuję pomieszczenie i wyrzucam śmieci");
     sleep(randTime(5));
-    printDebugInfo("<SK> Wyrzuciłem śmieci, wracam");
+    printDebugInfo("<SK> Wyrzuciłem śmieci");
 
     requestResource(State::WAIT_ACK_ELEV_BACK, Message::REQ_ELEV, "Żądam wind na górę", packet);
     
@@ -169,7 +169,7 @@ void ackReceived() {
 }
 
 void setAfterAckReceived(int &resource, State &newState) {
-    if (state == State::WAIT_ACK_ELEV || state == State::WAIT_ELEV_BACK) {
+    if (state == State::WAIT_ACK_ELEV || state == State::WAIT_ACK_ELEV_BACK) {
         resource = process.getHeadElev();
         if (state == State::WAIT_ACK_ELEV)
             newState = State::WAIT_ELEV;
