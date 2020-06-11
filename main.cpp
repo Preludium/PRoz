@@ -7,7 +7,7 @@ MPI_Datatype MPI_PACKET_T;
 MPI_Status status;
 
 int size, tid;
-bool canProceed = 0;
+bool canProceed = false;
 pthread_t threadCom;
 State state = INIT;
 pthread_mutex_t stateMut = PTHREAD_MUTEX_INITIALIZER;
@@ -59,9 +59,37 @@ void init() {
 
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &tid);
-    srand(tid);
+    srand(time(NULL) * tid);
 
     pthread_create( &threadCom, NULL, startCommunicationThread , 0);
+}
+
+void reduceRoom(int val) {
+    pthread_mutex_lock( &resourceMut );
+    process.decreaseHeadRoom(val);
+    pthread_mutex_unlock( &resourceMut );
+}
+
+void reduceElev() {
+    pthread_mutex_lock( &resourceMut );
+    process.decrementHeadElev();
+    pthread_mutex_unlock( &resourceMut );
+}
+
+void beforeReleaseElev() {
+    pthread_mutex_lock( &resourceMut );
+    process.incrementHeadElev();
+    process.setHeadElev(process.getHeadElev() - process.getTailElev());
+    process.setTailElev(0);
+    pthread_mutex_unlock( &resourceMut );
+}
+
+void beforeReleaseRoom(int val) {
+    pthread_mutex_lock( &resourceMut );
+    process.increaseHeadRoom(val);
+    process.setHeadRoom(process.getHeadRoom() - process.getTailRoom());
+    process.setTailRoom(0);
+    pthread_mutex_unlock( &resourceMut );
 }
 
 void mainLoop() {
@@ -70,11 +98,14 @@ void mainLoop() {
     packet->data = process.getTrashes();
 
     // now we are sending request and release to everyone (including myself), is it ok??
-    
     // here: first we change state to WAIT_ACK_ROOM, then we check if we received enough
     // acks, then we check if we have enough rooms, if yes -> wake, no -> change state to WAIT_ROOM
+    cout << CYN << "[" << tid << "] Wylosowałem " << process.getTrashes() << " pokoi" << RESET << endl;
+    reduceRoom(process.getTrashes());
     requestResource(State::WAIT_ACK_ROOM, Message::REQ_ROOM, "Żądam pokoi", packet);
-    requestResource(State::WAIT_ACK_ELEV, Message::REQ_ELEV, "Żądam wind na dół", packet);
+
+    reduceElev();
+    requestResource(State::WAIT_ACK_ELEV, Message::REQ_ELEV, "Żądam windę na dół", packet);
     
     changeState(State::IN_ELEV);
     printDebugInfo(">SK< Jadę windą na dół");
@@ -82,35 +113,35 @@ void mainLoop() {
     printDebugInfo("<SK> Zjechałem na dół");
 
 
-    printDebugInfo("Zwalniam zasób windy (na dole)");
-    sendToAll(packet, Message::REL_ELEV);
-
-
+    // printDebugInfo("Zwalniam zasób windy (na dole)");
     changeState(State::IN_ROOM);
+    beforeReleaseElev();
+    sendToAll(packet, Message::REL_ELEV);
     printDebugInfo(">SK< Zajmuję pomieszczenie i wyrzucam śmieci");
     sleep(randTime(5));
     printDebugInfo("<SK> Wyrzuciłem śmieci");
-
-    requestResource(State::WAIT_ACK_ELEV_BACK, Message::REQ_ELEV, "Żądam wind na górę", packet);
     
-    printDebugInfo("Zwalniam zasób pokoje");
-    sendToAll(packet, Message::REL_ROOM);
-
-
+    reduceElev();
+    requestResource(State::WAIT_ACK_ELEV_BACK, Message::REQ_ELEV, "Żądam windę na górę", packet);
+    
+    // printDebugInfo("Zwalniam zasób pokoje");
     changeState(State::IN_ELEV_BACK);
+    beforeReleaseRoom(process.getTrashes());
+    sendToAll(packet, Message::REL_ROOM);
     printDebugInfo(">SK< Wjeżdżam windą na górę");
     sleep(randTime(5));
     printDebugInfo("<SK> Wjechałem na górę");
 
-    printDebugInfo("Zwalniam zasób windy (na górze)");
+    // printDebugInfo("Zwalniam zasób windy (na górze)");
+    beforeReleaseElev();
     sendToAll(packet, Message::REL_ELEV);
-
     // FINISH
+    changeState(State::END);
 }
 
 void finalize() {
-    //cout << "Waiting for communication thread" << endl;
     pthread_join(threadCom, NULL);
+    cout << RED << "[" << tid << "] Communication thread joined" << RESET << endl;
     MPI_Type_free(&MPI_PACKET_T);
     MPI_Finalize();
 }
@@ -122,24 +153,26 @@ void requestResource(State ackState, Message tag, string debugInfo, Packet* pack
     pthread_mutex_lock(&ackMut);
     if (!canProceed)
         threadWait();
-    canProceed = 0;
+    canProceed = false;
     pthread_mutex_unlock(&ackMut);
 }
 
 void sendPacket(Packet *packet, int destination, int tag) {
-    int freePacket = false;
-    if (packet == 0) {
-        packet = new Packet();
-        freePacket = true;
-    }
+    // int freePacket = false;
+    // if (packet == 0) {
+    //     packet = new Packet();
+    //     freePacket = true;
+    // }
     pthread_mutex_lock( &resourceMut );
     process.incrementTimeStamp(); // mutegz 
     pthread_mutex_unlock( &resourceMut );
     packet->src = tid;
     packet->ts = process.getTimeStamp();
     MPI_Send(packet, 1, MPI_PACKET_T, destination, tag, MPI_COMM_WORLD);
-    if (freePacket) 
-        free(packet);
+    // if (freePacket) {
+    //     delete packet;
+    //     packet = NULL;
+    // }
 }
 
 void changeState( State newState ) {
@@ -155,17 +188,18 @@ void changeState( State newState ) {
 void ackReceived() {
     pthread_mutex_lock( &resourceMut );
     process.incrementAckCounter(); // probably lock mutegz
-    pthread_mutex_unlock( &resourceMut );
     if (process.getAckCounter() == size - 1) {
         process.setAckCounter(0);
         int resource;
         State newState;
         setAfterAckReceived(resource, newState);
+        // cout << GRN << "[" << tid <<"] Mam wszystko [" << resource << "]" << RESET << endl;
         if (resource >= 0)
             threadWake();
         else
             changeState(newState);
     }
+    pthread_mutex_unlock( &resourceMut );
 }
 
 void setAfterAckReceived(int &resource, State &newState) {
@@ -195,13 +229,14 @@ void sendAck(int destination) {
 
 void sendToAll(Packet *packet, int tag) {
     for (int i = 0; i < size; ++i) 
-        sendPacket(packet, i, tag);
+        if (tid != i)
+            sendPacket(packet, i, tag);
 }
 
 
 void printDebugInfo(string msg) {
     cout << "[" << tid << "] " << "[" << process.getTimeStamp() << "] ";
-    cout << msg << endl;
+    cout << msg << " | HEAD=" << process.getHeadElev() << ", TAIL=" << process.getTailElev() <<endl;
 }
 
 string getResourceString(int resTag) {
@@ -219,7 +254,7 @@ void threadWait() {
 
 void threadWake() {
     pthread_mutex_lock(&ackMut);
-    canProceed = 1;
+    canProceed = true;
     pthread_cond_signal(&ackCond);
     pthread_mutex_unlock(&ackMut);
 }
@@ -234,7 +269,6 @@ void changeResources(int msg, Packet packet) {
 
     switch (msg) {
         case Message::REQ_ROOM:
-            sendAck(src);
             switch (state) {
                 case INIT:
                 case IN_ELEV_BACK:
@@ -256,10 +290,11 @@ void changeResources(int msg, Packet packet) {
                     process.increaseTailRoom(data);
                     break;
             }
+            setTimeStamp(ts);
+            sendAck(src);
             break;
 
         case Message::REQ_ELEV:
-            sendAck(src);
             switch (state) {
                 case INIT:
                 case WAIT_ACK_ROOM:
@@ -281,25 +316,25 @@ void changeResources(int msg, Packet packet) {
                     process.incrementTailElev();
                     break;
             }
+            setTimeStamp(ts);
+            sendAck(src);
             break;
 
         case Message::REL_ROOM:
-            if (state == WAIT_ROOM) {
-                process.increaseHeadRoom(data);
+            process.increaseHeadRoom(data);
+            if (state == WAIT_ROOM) 
                 if (process.getHeadRoom() >= 0)
                     threadWake();
-            } else 
-                process.increaseHeadRoom(data);
+            setTimeStamp(ts);
             break;
 
         case Message::REL_ELEV:
-            if (state == WAIT_ELEV || state == WAIT_ELEV_BACK) {
-                process.incrementHeadElev();
-                threadWake();
-            } else 
-                process.incrementHeadElev();
+            process.incrementHeadElev();
+            if (state == WAIT_ELEV || state == WAIT_ELEV_BACK)
+                if (process.getHeadElev() >= 0)
+                    threadWake();
+            setTimeStamp(ts);
             break;
     }
-    setTimeStamp(ts);
     pthread_mutex_unlock( &resourceMut );
 }

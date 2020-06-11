@@ -21,7 +21,6 @@ using namespace std;
 
 #define MAX_ROOM 10
 #define MAX_ELEV 5
-#define MSG_SIZE 64
 
 
 class Packet { 
