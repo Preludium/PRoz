@@ -15,8 +15,8 @@ void *startCommunicationThread(void *ptr) {
 
             case Message::REQ_ELEV:
             case Message::REQ_ROOM:
-            case Message::RES_ELEV:
-            case Message::RES_ROOM:
+            case Message::REL_ELEV:
+            case Message::REL_ROOM:
                 changeResources(status.MPI_TAG, packet);
                 break;
 

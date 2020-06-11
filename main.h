@@ -49,8 +49,8 @@ enum Message {
     ACK, 
     REQ_ELEV, 
     REQ_ROOM, 
-    RES_ELEV, 
-    RES_ROOM, 
+    REL_ELEV, 
+    REL_ROOM, 
     FINISH
 };
 
