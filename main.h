@@ -21,8 +21,6 @@ using namespace std;
 
 #define MAX_ROOM 10
 #define MAX_ELEV 5
-
-
 class Packet { 
 public:
     int ts; // lamport clock timestamp 

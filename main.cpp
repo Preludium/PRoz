@@ -5,6 +5,7 @@
 
 MPI_Datatype MPI_PACKET_T;
 MPI_Status status;
+const bool debug = false;
 
 int size, tid;
 bool canProceed = false;
@@ -16,13 +17,13 @@ pthread_mutex_t ackMut = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t ackCond = PTHREAD_COND_INITIALIZER;
 Process process;
 
-// pROBABLy need to add check_thread_support from "magazyn" but dunno what it does
-// we can skip WAIT_ACK states but need to check AckCounter in changeResource() for WAIT_[...] state
-// dunno if its worth it
-
 void init();
 void mainLoop();
 void finalize();
+void reduceRoom(int);
+void reduceElev();
+void beforeReleaseElev();
+void beforeReleaseRoom(int);
 void sendPacket(Packet*, int, int);
 void changeState();
 void ackReceived();
@@ -36,8 +37,34 @@ void setAfterAckReceived(int&, State&);
 void requestResource(State, Message, string, Packet*);
 int randTime(int);
 
+void check_thread_support(int provided) {
+    if (debug) printf("THREAD SUPPORT: chcemy %d. Co otrzymamy?\n", provided);
+    switch (provided) {
+        case MPI_THREAD_SINGLE: 
+            if (debug) printf("Brak wsparcia dla wątków, kończę\n");
+            fprintf(stderr, "Brak wystarczającego wsparcia dla wątków - wychodzę!\n");
+            MPI_Finalize();
+            exit(-1);
+            break;
+        case MPI_THREAD_FUNNELED: 
+            if (debug) printf("tylko te wątki, ktore wykonaly mpi_init_thread mogą wykonać wołania do biblioteki mpi\n");
+	        break;
+        case MPI_THREAD_SERIALIZED: 
+            if (debug) printf("tylko jeden watek naraz może wykonać wołania do biblioteki MPI\n");
+	        break;
+        case MPI_THREAD_MULTIPLE:
+            if (debug) printf("Pełne wsparcie dla wątków\n");
+	        break;
+        default:
+            if (debug) printf("Nikt nic nie wie\n");
+    }
+}
+
 int main(int argc, char **argv) {
-    MPI_Init(&argc, &argv);
+    int provided;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    check_thread_support(provided);
+
     init();
     mainLoop();
     finalize();
@@ -64,40 +91,11 @@ void init() {
     pthread_create( &threadCom, NULL, startCommunicationThread , 0);
 }
 
-void reduceRoom(int val) {
-    pthread_mutex_lock( &resourceMut );
-    process.decreaseHeadRoom(val);
-    pthread_mutex_unlock( &resourceMut );
-}
-
-void reduceElev() {
-    pthread_mutex_lock( &resourceMut );
-    process.decrementHeadElev();
-    pthread_mutex_unlock( &resourceMut );
-}
-
-void beforeReleaseElev() {
-    pthread_mutex_lock( &resourceMut );
-    process.incrementHeadElev();
-    process.setHeadElev(process.getHeadElev() - process.getTailElev());
-    process.setTailElev(0);
-    pthread_mutex_unlock( &resourceMut );
-}
-
-void beforeReleaseRoom(int val) {
-    pthread_mutex_lock( &resourceMut );
-    process.increaseHeadRoom(val);
-    process.setHeadRoom(process.getHeadRoom() - process.getTailRoom());
-    process.setTailRoom(0);
-    pthread_mutex_unlock( &resourceMut );
-}
-
 void mainLoop() {
     process = Process();
     Packet *packet = new Packet();
     packet->data = process.getTrashes();
 
-    // now we are sending request and release to everyone (including myself), is it ok??
     // here: first we change state to WAIT_ACK_ROOM, then we check if we received enough
     // acks, then we check if we have enough rooms, if yes -> wake, no -> change state to WAIT_ROOM
     cout << CYN << "[" << tid << "] Wylosowałem " << process.getTrashes() << " pokoi" << RESET << endl;
@@ -146,6 +144,34 @@ void finalize() {
     MPI_Finalize();
 }
 
+void reduceRoom(int val) {
+    pthread_mutex_lock( &resourceMut );
+    process.decreaseHeadRoom(val);
+    pthread_mutex_unlock( &resourceMut );
+}
+
+void reduceElev() {
+    pthread_mutex_lock( &resourceMut );
+    process.decrementHeadElev();
+    pthread_mutex_unlock( &resourceMut );
+}
+
+void beforeReleaseElev() {
+    pthread_mutex_lock( &resourceMut );
+    process.incrementHeadElev();
+    process.setHeadElev(process.getHeadElev() - process.getTailElev());
+    process.setTailElev(0);
+    pthread_mutex_unlock( &resourceMut );
+}
+
+void beforeReleaseRoom(int val) {
+    pthread_mutex_lock( &resourceMut );
+    process.increaseHeadRoom(val);
+    process.setHeadRoom(process.getHeadRoom() - process.getTailRoom());
+    process.setTailRoom(0);
+    pthread_mutex_unlock( &resourceMut );
+}
+
 void requestResource(State ackState, Message tag, string debugInfo, Packet* packet) {
     printDebugInfo(debugInfo);
     sendToAll(packet, tag);
@@ -158,21 +184,12 @@ void requestResource(State ackState, Message tag, string debugInfo, Packet* pack
 }
 
 void sendPacket(Packet *packet, int destination, int tag) {
-    // int freePacket = false;
-    // if (packet == 0) {
-    //     packet = new Packet();
-    //     freePacket = true;
-    // }
     pthread_mutex_lock( &resourceMut );
-    process.incrementTimeStamp(); // mutegz 
+    process.incrementTimeStamp();  
     pthread_mutex_unlock( &resourceMut );
     packet->src = tid;
     packet->ts = process.getTimeStamp();
     MPI_Send(packet, 1, MPI_PACKET_T, destination, tag, MPI_COMM_WORLD);
-    // if (freePacket) {
-    //     delete packet;
-    //     packet = NULL;
-    // }
 }
 
 void changeState( State newState ) {
@@ -187,13 +204,13 @@ void changeState( State newState ) {
 
 void ackReceived() {
     pthread_mutex_lock( &resourceMut );
-    process.incrementAckCounter(); // probably lock mutegz
+    process.incrementAckCounter();
     if (process.getAckCounter() == size - 1) {
         process.setAckCounter(0);
         int resource;
         State newState;
         setAfterAckReceived(resource, newState);
-        // cout << GRN << "[" << tid <<"] Mam wszystko [" << resource << "]" << RESET << endl;
+        cout << GRN << "[" << tid <<"] State=[" << state <<"] uzyskal wszystkie ACK zasób=[" << resource << "]" << RESET << endl;
         if (resource >= 0)
             threadWake();
         else
@@ -226,13 +243,11 @@ void sendAck(int destination) {
     MPI_Send( packet, 1, MPI_PACKET_T, destination, Message::ACK, MPI_COMM_WORLD);
 }
 
-
 void sendToAll(Packet *packet, int tag) {
     for (int i = 0; i < size; ++i) 
         if (tid != i)
             sendPacket(packet, i, tag);
 }
-
 
 void printDebugInfo(string msg) {
     cout << "[" << tid << "] " << "[" << process.getTimeStamp() << "] ";
