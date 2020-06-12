@@ -54,8 +54,8 @@ enum Message {
 extern MPI_Datatype MPI_PACKET_T;
 extern State state;
 
-void changeState( State );
-void ackReceived();
+void changeState(State);
+void ackReceived(int);
 void changeResources(int, Packet);
 
 #endif 

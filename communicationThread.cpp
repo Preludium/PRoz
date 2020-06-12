@@ -10,7 +10,7 @@ void *startCommunicationThread(void *ptr) {
 
         switch (status.MPI_TAG) {
             case Message::ACK:
-                ackReceived();
+                ackReceived(packet.ts);
                 break;
 
             case Message::REQ_ELEV:

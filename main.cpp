@@ -33,6 +33,7 @@ void printDebugInfo(string);
 string getResourceString(int);
 void threadWait();
 void threadWake();
+void setTimeStamp(int);
 void setAfterAckReceived(int&, State&);
 void requestResource(State, Message, string, Packet*);
 int randTime(int);
@@ -202,15 +203,16 @@ void changeState( State newState ) {
     pthread_mutex_unlock( &stateMut );
 }
 
-void ackReceived() {
+void ackReceived(int ts) {
     pthread_mutex_lock( &resourceMut );
     process.incrementAckCounter();
+    setTimeStamp(ts);
     if (process.getAckCounter() == size - 1) {
         process.setAckCounter(0);
         int resource;
         State newState;
         setAfterAckReceived(resource, newState);
-        cout << GRN << "[" << tid <<"] State=[" << state <<"] uzyskal wszystkie ACK zasób=[" << resource << "]" << RESET << endl;
+        // cout << GRN << "[" << tid <<"] State=[" << state <<"] uzyskal wszystkie ACK zasób=[" << resource << "]" << RESET << endl;
         if (resource >= 0)
             threadWake();
         else
