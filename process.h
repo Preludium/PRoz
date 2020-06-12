@@ -13,8 +13,11 @@ class Process {
         trashes, 
         ackCounter,
         timeStamp;
+    bool canProceed;
 public:
     Process();
+    bool getCanProceed();
+    void setCanProceed(bool);
     int getHeadElev();
     void setHeadElev(int headElev);
     int getHeadRoom();

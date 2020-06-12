@@ -9,6 +9,15 @@ Process::Process() {
     this->trashes = 1 + rand() % (MAX_ROOM - 1);
     this->ackCounter = 0;
     this->timeStamp = 0;
+    this->canProceed = false;
+}
+
+bool Process::getCanProceed() {
+    return this->canProceed;
+}
+
+void Process::setCanProceed(bool canProceed) {
+    this->canProceed = canProceed;
 }
 
 int Process::getHeadElev() {

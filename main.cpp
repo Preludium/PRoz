@@ -8,7 +8,6 @@ MPI_Status status;
 const bool debug = false;
 
 int size, tid;
-bool canProceed = false;
 pthread_t threadCom;
 State state = INIT;
 pthread_mutex_t stateMut = PTHREAD_MUTEX_INITIALIZER;
@@ -29,7 +28,7 @@ void changeState();
 void ackReceived();
 void changeResources();
 void sendToAll(Packet*, int);
-void printDebugInfo(string);
+void printDebugInfo(string, string = "");
 string getResourceString(int);
 void threadWait();
 void threadWake();
@@ -97,28 +96,29 @@ void mainLoop() {
     Packet *packet = new Packet();
     packet->data = process.getTrashes();
 
+    while(1) {
     // here: first we change state to WAIT_ACK_ROOM, then we check if we received enough
     // acks, then we check if we have enough rooms, if yes -> wake, no -> change state to WAIT_ROOM
     cout << CYN << "[" << tid << "] Wylosowałem " << process.getTrashes() << " pokoi" << RESET << endl;
     reduceRoom(process.getTrashes());
     requestResource(State::WAIT_ACK_ROOM, Message::REQ_ROOM, "Żądam pokoi", packet);
-
     reduceElev();
     requestResource(State::WAIT_ACK_ELEV, Message::REQ_ELEV, "Żądam windę na dół", packet);
     
     changeState(State::IN_ELEV);
-    printDebugInfo(">SK< Jadę windą na dół");
+    printDebugInfo(">SK< Jadę windą na dół", GRN);
     sleep(randTime(5));
-    printDebugInfo("<SK> Zjechałem na dół");
+    printDebugInfo("<SK> Zjechałem na dół", GRN);
 
 
-    // printDebugInfo("Zwalniam zasób windy (na dole)");
+    // printDebugInfo("Zwalniam zasób windy (na dole)");    cout << "TIMESTAMP: " << process.getTimeStamp() << endl;
+
     changeState(State::IN_ROOM);
     beforeReleaseElev();
     sendToAll(packet, Message::REL_ELEV);
-    printDebugInfo(">SK< Zajmuję pomieszczenie i wyrzucam śmieci");
+    printDebugInfo(">SK< Zajmuję pomieszczenie i wyrzucam śmieci", BLU);
     sleep(randTime(5));
-    printDebugInfo("<SK> Wyrzuciłem śmieci");
+    printDebugInfo("<SK> Wyrzuciłem śmieci", BLU);
     
     reduceElev();
     requestResource(State::WAIT_ACK_ELEV_BACK, Message::REQ_ELEV, "Żądam windę na górę", packet);
@@ -127,15 +127,16 @@ void mainLoop() {
     changeState(State::IN_ELEV_BACK);
     beforeReleaseRoom(process.getTrashes());
     sendToAll(packet, Message::REL_ROOM);
-    printDebugInfo(">SK< Wjeżdżam windą na górę");
+    printDebugInfo(">SK< Wjeżdżam windą na górę", YEL);
     sleep(randTime(5));
-    printDebugInfo("<SK> Wjechałem na górę");
+    printDebugInfo("<SK> Wjechałem na górę", YEL);
 
     // printDebugInfo("Zwalniam zasób windy (na górze)");
     beforeReleaseElev();
     sendToAll(packet, Message::REL_ELEV);
     // FINISH
-    changeState(State::END);
+    }
+    changeState(State::END);       
 }
 
 void finalize() {
@@ -178,9 +179,9 @@ void requestResource(State ackState, Message tag, string debugInfo, Packet* pack
     sendToAll(packet, tag);
     changeState(ackState);
     pthread_mutex_lock(&ackMut);
-    if (!canProceed)
+    if (!process.getCanProceed())
         threadWait();
-    canProceed = false;
+    process.setCanProceed(false);
     pthread_mutex_unlock(&ackMut);
 }
 
@@ -237,7 +238,6 @@ void setAfterAckReceived(int &resource, State &newState) {
 void setTimeStamp(int ts) { // DO NOT USE IF NOT IN RESOURCE MUTEX AREA
     process.setTimeStamp(max(ts, process.getTimeStamp()) + 1);
 }
-
 void sendAck(int destination) {
     Packet *packet = new Packet();
     packet->src = tid;
@@ -251,9 +251,9 @@ void sendToAll(Packet *packet, int tag) {
             sendPacket(packet, i, tag);
 }
 
-void printDebugInfo(string msg) {
-    cout << "[" << tid << "] " << "[" << process.getTimeStamp() << "] ";
-    cout << msg << " | HEAD=" << process.getHeadElev() << ", TAIL=" << process.getTailElev() <<endl;
+void printDebugInfo(string msg, string col) {
+    cout << col << "[" << tid << "] " << "[" << process.getTimeStamp() << "] ";
+    cout << msg << " | HEAD=" << process.getHeadRoom() << ", TAIL=" << process.getTailRoom() << RESET << endl;
 }
 
 string getResourceString(int resTag) {
@@ -271,7 +271,7 @@ void threadWait() {
 
 void threadWake() {
     pthread_mutex_lock(&ackMut);
-    canProceed = true;
+    process.setCanProceed(true);
     pthread_cond_signal(&ackCond);
     pthread_mutex_unlock(&ackMut);
 }
@@ -292,9 +292,9 @@ void changeResources(int msg, Packet packet) {
                     process.decreaseHeadRoom(data);
                     break;
                 case WAIT_ACK_ROOM:
-                    if (process.getTimeStamp() < ts) // it means that incoming packet is in front of this process in Q
+                    if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)) // it means that incoming packet is in front of this process in Q
                         process.decreaseHeadRoom(data);
-                    else
+                    else 
                         process.increaseTailRoom(data);
                     break;
                 case WAIT_ROOM:
@@ -321,7 +321,7 @@ void changeResources(int msg, Packet packet) {
                     break;
                 case WAIT_ACK_ELEV:
                 case WAIT_ACK_ELEV_BACK:
-                    if (process.getTimeStamp() < ts) // it means that incoming packet is in front of this process in Q
+                    if (process.getTimeStamp() < ts || (process.getTimeStamp() < ts && tid < src)) // it means that incoming packet is in front of this process in Q
                         process.decrementHeadElev();
                     else
                         process.incrementTailElev();
