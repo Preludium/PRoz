@@ -176,8 +176,8 @@ void beforeReleaseRoom(int val) {
 
 void requestResource(State ackState, Message tag, string debugInfo, Packet* packet) {
     printDebugInfo(debugInfo);
-    sendToAll(packet, tag);
     changeState(ackState);
+    sendToAll(packet, tag);
     pthread_mutex_lock(&ackMut);
     if (!process.getCanProceed())
         threadWait();
@@ -292,10 +292,12 @@ void changeResources(int msg, Packet packet) {
                     process.decreaseHeadRoom(data);
                     break;
                 case WAIT_ACK_ROOM:
-                    if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)) // it means that incoming packet is in front of this process in Q
-                        process.decreaseHeadRoom(data);
-                    else 
+                    if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)){ // it means that incoming packet is in front of this process in Q
                         process.increaseTailRoom(data);
+                    }
+                    else {
+                        process.decreaseHeadRoom(data);   
+                    }
                     break;
                 case WAIT_ROOM:
                 case WAIT_ACK_ELEV:
@@ -321,10 +323,10 @@ void changeResources(int msg, Packet packet) {
                     break;
                 case WAIT_ACK_ELEV:
                 case WAIT_ACK_ELEV_BACK:
-                    if (process.getTimeStamp() < ts || (process.getTimeStamp() < ts && tid < src)) // it means that incoming packet is in front of this process in Q
-                        process.decrementHeadElev();
-                    else
+                    if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)) // it means that incoming packet is in front of this process in Q
                         process.incrementTailElev();
+                    else
+                        process.decrementHeadElev();
                     break;
                 case WAIT_ELEV:
                 case IN_ELEV:
