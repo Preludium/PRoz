@@ -94,54 +94,57 @@ void init() {
 void mainLoop() {
     process = Process();
     Packet *packet = new Packet();
-    packet->data = process.getTrashes();
 
     while(1) {
-    // here: first we change state to WAIT_ACK_ROOM, then we check if we received enough
-    // acks, then we check if we have enough rooms, if yes -> wake, no -> change state to WAIT_ROOM
-    cout << CYN << "[" << tid << "] Wylosowałem " << process.getTrashes() << " pokoi" << RESET << endl;
-    reduceRoom(process.getTrashes());
-    requestResource(State::WAIT_ACK_ROOM, Message::REQ_ROOM, "Żądam pokoi", packet);
-    reduceElev();
-    requestResource(State::WAIT_ACK_ELEV, Message::REQ_ELEV, "Żądam windę na dół", packet);
-    
-    changeState(State::IN_ELEV);
-    printDebugInfo(">SK< Jadę windą na dół", GRN);
-    sleep(randTime(5));
-    printDebugInfo("<SK> Zjechałem na dół", GRN);
+        // losuję śmieci
+        process.drawTrashes();
+        packet->data = process.getTrashes();
+        printDebugInfo("Wylosowałem " + to_string(process.getTrashes()) + " pokoi", CYN);
+        
+        // żądam pokoi - zmniejszamy lokalnie zasób i wysyłamy żądanie
+        reduceRoom(process.getTrashes());
+        requestResource(State::WAIT_ACK_ROOM, Message::REQ_ROOM, "Żądam pokoi", packet);
+        
+        // żądam wind - zmniejszamy lokalnie zasób i wysyłamy żądanie
+        reduceElev();
+        requestResource(State::WAIT_ACK_ELEV, Message::REQ_ELEV, "Żądam windę na dół", packet);
+        
+        // dostałem oba zasoby - można zjeżdżać na dół
+        changeState(State::IN_ELEV);
+        printDebugInfo(">SK< Jadę windą na dół", GRN);
+        sleep(randTime(5));
+        printDebugInfo("<SK> Zjechałem na dół", GRN);
 
+        // jestem na dole - wchodzimy do pokoju i zwalniamy windę
+        changeState(State::IN_ROOM);
+        beforeReleaseElev();
+        sendToAll(packet, Message::REL_ELEV);
+        printDebugInfo(">SK< Zajmuję pomieszczenie i wyrzucam śmieci", BLU);
+        sleep(randTime(5));
+        printDebugInfo("<SK> Wyrzuciłem śmieci", BLU);
+        
+        // wyrzuciłem śmieci - można wracać - ządam windy - zmniejszamy lokalnie zasób i wysyłamy żądanie
+        reduceElev();
+        requestResource(State::WAIT_ACK_ELEV_BACK, Message::REQ_ELEV, "Żądam windę na górę", packet);
+        
+        // jestem w windzie, mogę bezpiecznie zwolnić pokoje
+        changeState(State::IN_ELEV_BACK);
+        beforeReleaseRoom(process.getTrashes());
+        sendToAll(packet, Message::REL_ROOM);
+        printDebugInfo(">SK< Wjeżdżam windą na górę", YEL);
+        sleep(randTime(5));
+        printDebugInfo("<SK> Wjechałem na górę", YEL);
 
-    // printDebugInfo("Zwalniam zasób windy (na dole)");    cout << "TIMESTAMP: " << process.getTimeStamp() << endl;
-
-    changeState(State::IN_ROOM);
-    beforeReleaseElev();
-    sendToAll(packet, Message::REL_ELEV);
-    printDebugInfo(">SK< Zajmuję pomieszczenie i wyrzucam śmieci", BLU);
-    sleep(randTime(5));
-    printDebugInfo("<SK> Wyrzuciłem śmieci", BLU);
-    
-    reduceElev();
-    requestResource(State::WAIT_ACK_ELEV_BACK, Message::REQ_ELEV, "Żądam windę na górę", packet);
-    
-    // printDebugInfo("Zwalniam zasób pokoje");
-    changeState(State::IN_ELEV_BACK);
-    beforeReleaseRoom(process.getTrashes());
-    sendToAll(packet, Message::REL_ROOM);
-    printDebugInfo(">SK< Wjeżdżam windą na górę", YEL);
-    sleep(randTime(5));
-    printDebugInfo("<SK> Wjechałem na górę", YEL);
-
-    // printDebugInfo("Zwalniam zasób windy (na górze)");
-    beforeReleaseElev();
-    sendToAll(packet, Message::REL_ELEV);
-    // FINISH
+        // wjechałem na górę - mogę bezpiecznie zwolnić windę
+        beforeReleaseElev();
+        sendToAll(packet, Message::REL_ELEV);
     }
     changeState(State::END);       
 }
 
 void finalize() {
     pthread_join(threadCom, NULL);
-    cout << RED << "[" << tid << "] Communication thread joined" << RESET << endl;
+    printDebugInfo("Communication thread joined", RED);
     MPI_Type_free(&MPI_PACKET_T);
     MPI_Finalize();
 }
@@ -158,6 +161,9 @@ void reduceElev() {
     pthread_mutex_unlock( &resourceMut );
 }
 
+// zanim uwolnimy zasoby, należy lokalnie zwiększyć to co wcześniej odjęliśmy oraz ustawić
+// wartość head tak, żeby się zgadzała z zapamietanymi żądaniami (tail)
+// potencjalnie jesteśmy ostatni w kolejce, więc ustawiamy wartość tail na 0
 void beforeReleaseElev() {
     pthread_mutex_lock( &resourceMut );
     process.incrementHeadElev();
@@ -213,7 +219,6 @@ void ackReceived(int ts) {
         int resource;
         State newState;
         setAfterAckReceived(resource, newState);
-        // cout << GRN << "[" << tid <<"] State=[" << state <<"] uzyskal wszystkie ACK zasób=[" << resource << "]" << RESET << endl;
         if (resource >= 0)
             threadWake();
         else
@@ -222,6 +227,8 @@ void ackReceived(int ts) {
     pthread_mutex_unlock( &resourceMut );
 }
 
+// gdy dostaniemy wszystkie ackna postawie obecnego stanu ustawiamy wartość jakich 
+// zasobów należy sprawdzić aby móc procedować, a także do jakiego stanu należy przejść
 void setAfterAckReceived(int &resource, State &newState) {
     if (state == State::WAIT_ACK_ELEV || state == State::WAIT_ACK_ELEV_BACK) {
         resource = process.getHeadElev();
@@ -238,6 +245,7 @@ void setAfterAckReceived(int &resource, State &newState) {
 void setTimeStamp(int ts) { // DO NOT USE IF NOT IN RESOURCE MUTEX AREA
     process.setTimeStamp(max(ts, process.getTimeStamp()) + 1);
 }
+
 void sendAck(int destination) {
     Packet *packet = new Packet();
     packet->src = tid;

@@ -6,10 +6,14 @@ Process::Process() {
     this->headRoom = MAX_ROOM;
     this->tailElev = 0;
     this->tailRoom = 0;
-    this->trashes = 6;// + rand() % (MAX_ROOM - 1);
+    this->trashes = 0;
     this->ackCounter = 0;
     this->timeStamp = 0;
     this->canProceed = false;
+}
+
+void Process::drawTrashes() {
+    this->trashes = 1 + rand() % (MAX_ROOM - 1);
 }
 
 bool Process::getCanProceed() {

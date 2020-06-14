@@ -16,6 +16,7 @@ class Process {
     bool canProceed;
 public:
     Process();
+    void drawTrashes();
     bool getCanProceed();
     void setCanProceed(bool);
     int getHeadElev();
