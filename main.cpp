@@ -182,8 +182,8 @@ void beforeReleaseRoom(int val) {
 
 void requestResource(State ackState, Message tag, string debugInfo, Packet* packet) {
     printDebugInfo(debugInfo);
-    changeState(ackState);
     sendToAll(packet, tag);
+    changeState(ackState);
     pthread_mutex_lock(&ackMut);
     if (!process.getCanProceed())
         threadWait();
@@ -192,9 +192,9 @@ void requestResource(State ackState, Message tag, string debugInfo, Packet* pack
 }
 
 void sendPacket(Packet *packet, int destination, int tag) {
-    pthread_mutex_lock( &resourceMut );
-    process.incrementTimeStamp();  
-    pthread_mutex_unlock( &resourceMut );
+    //pthread_mutex_lock( &resourceMut );
+    //process.incrementTimeStamp();  
+    //pthread_mutex_unlock( &resourceMut );
     packet->src = tid;
     packet->ts = process.getTimeStamp();
     MPI_Send(packet, 1, MPI_PACKET_T, destination, tag, MPI_COMM_WORLD);
@@ -213,7 +213,7 @@ void changeState( State newState ) {
 void ackReceived(int ts) {
     pthread_mutex_lock( &resourceMut );
     process.incrementAckCounter();
-    setTimeStamp(ts);
+    //setTimeStamp(ts);
     if (process.getAckCounter() == size - 1) {
         process.setAckCounter(0);
         int resource;
@@ -300,12 +300,12 @@ void changeResources(int msg, Packet packet) {
                     process.decreaseHeadRoom(data);
                     break;
                 case WAIT_ACK_ROOM:
-                    if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)){ // it means that incoming packet is in front of this process in Q
-                        process.increaseTailRoom(data);
-                    }
-                    else {
-                        process.decreaseHeadRoom(data);   
-                    }
+                    //if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)){ // it means that incoming packet is in front of this process in Q
+                        process.increaseTailRoom(data);   
+                    //}
+                    //else {
+                    //    process.decreaseHeadRoom(data);
+                    //}
                     break;
                 case WAIT_ROOM:
                 case WAIT_ACK_ELEV:
@@ -331,11 +331,11 @@ void changeResources(int msg, Packet packet) {
                     break;
                 case WAIT_ACK_ELEV:
                 case WAIT_ACK_ELEV_BACK:
-                    if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)) // it means that incoming packet is in front of this process in Q
+                    //if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)) // it means that incoming packet is in front of this process in Q
                         process.incrementTailElev();
-                    else
-                        process.decrementHeadElev();
-                    break;
+                    //else
+                    //    process.decrementHeadElev();
+                    //break;
                 case WAIT_ELEV:
                 case IN_ELEV:
                 case WAIT_ELEV_BACK:
