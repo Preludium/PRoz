@@ -20,7 +20,7 @@ using namespace std;
 #define RESET "\x1B[0m"
 
 #define MAX_ROOM 20
-#define MAX_ELEV 4
+#define MAX_ELEV 5
 class Packet { 
 public:
     int ts; // lamport clock timestamp 

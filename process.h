@@ -12,10 +12,13 @@ class Process {
         tailRoom, 
         trashes, 
         ackCounter,
-        timeStamp;
+        timeStamp,
+        requestMoment;
     bool canProceed;
 public:
     Process();
+    void setRequestMoment(int);
+    int getRequestMoment();
     void drawTrashes();
     bool getCanProceed();
     void setCanProceed(bool);

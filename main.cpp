@@ -182,8 +182,8 @@ void beforeReleaseRoom(int val) {
 
 void requestResource(State ackState, Message tag, string debugInfo, Packet* packet) {
     printDebugInfo(debugInfo);
-    sendToAll(packet, tag);
     changeState(ackState);
+    sendToAll(packet, tag);
     pthread_mutex_lock(&ackMut);
     if (!process.getCanProceed())
         threadWait();
@@ -196,12 +196,17 @@ void sendPacket(Packet *packet, int destination, int tag) {
     //process.incrementTimeStamp();  
     //pthread_mutex_unlock( &resourceMut );
     packet->src = tid;
-    packet->ts = process.getTimeStamp();
+    if (state == WAIT_ACK_ROOM || state == WAIT_ACK_ELEV || state == WAIT_ACK_ELEV_BACK)
+        packet->ts = process.getRequestMoment();
+    else
+        packet->ts = process.getTimeStamp();
     MPI_Send(packet, 1, MPI_PACKET_T, destination, tag, MPI_COMM_WORLD);
 }
 
 void changeState( State newState ) {
     pthread_mutex_lock( &stateMut );
+    if (state == WAIT_ACK_ELEV || state == WAIT_ACK_ELEV_BACK || state == WAIT_ACK_ROOM)
+        process.setRequestMoment(process.getTimeStamp());
     if (state == END) { 
 	    pthread_mutex_unlock( &stateMut );
         return;
@@ -291,6 +296,8 @@ int randTime(int max) {
 void changeResources(int msg, Packet packet) {
     pthread_mutex_lock( &resourceMut );
     int ts = packet.ts, data = packet.data, src = packet.src;
+    setTimeStamp(ts);
+
 
     switch (msg) {
         case Message::REQ_ROOM:
@@ -300,12 +307,12 @@ void changeResources(int msg, Packet packet) {
                     process.decreaseHeadRoom(data);
                     break;
                 case WAIT_ACK_ROOM:
-                    //if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)){ // it means that incoming packet is in front of this process in Q
-                        process.increaseTailRoom(data);   
-                    //}
-                    //else {
-                    //    process.decreaseHeadRoom(data);
-                    //}
+                    if (process.getRequestMoment() < ts || (process.getRequestMoment() == ts && tid < src)) { // it means that incoming packet is in front of this process in Q
+                        process.increaseTailRoom(data);
+                    }
+                    else {
+                        process.decreaseHeadRoom(data);
+                    }
                     break;
                 case WAIT_ROOM:
                 case WAIT_ACK_ELEV:
@@ -317,7 +324,6 @@ void changeResources(int msg, Packet packet) {
                     process.increaseTailRoom(data);
                     break;
             }
-            setTimeStamp(ts);
             sendAck(src);
             break;
 
@@ -331,11 +337,11 @@ void changeResources(int msg, Packet packet) {
                     break;
                 case WAIT_ACK_ELEV:
                 case WAIT_ACK_ELEV_BACK:
-                    //if (process.getTimeStamp() < ts || (process.getTimeStamp() == ts && tid < src)) // it means that incoming packet is in front of this process in Q
+                    if (process.getRequestMoment() < ts || (process.getRequestMoment() == ts && tid < src)) // it means that incoming packet is in front of this process in Q
                         process.incrementTailElev();
-                    //else
-                    //    process.decrementHeadElev();
-                    //break;
+                    else
+                        process.decrementHeadElev();
+                    break;
                 case WAIT_ELEV:
                 case IN_ELEV:
                 case WAIT_ELEV_BACK:
@@ -343,7 +349,6 @@ void changeResources(int msg, Packet packet) {
                     process.incrementTailElev();
                     break;
             }
-            setTimeStamp(ts);
             sendAck(src);
             break;
 
@@ -352,7 +357,6 @@ void changeResources(int msg, Packet packet) {
             if (state == WAIT_ROOM) 
                 if (process.getHeadRoom() >= 0)
                     threadWake();
-            setTimeStamp(ts);
             break;
 
         case Message::REL_ELEV:
@@ -360,7 +364,6 @@ void changeResources(int msg, Packet packet) {
             if (state == WAIT_ELEV || state == WAIT_ELEV_BACK)
                 if (process.getHeadElev() >= 0)
                     threadWake();
-            setTimeStamp(ts);
             break;
     }
     pthread_mutex_unlock( &resourceMut );

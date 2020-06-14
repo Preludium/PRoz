@@ -10,6 +10,15 @@ Process::Process() {
     this->ackCounter = 0;
     this->timeStamp = 0;
     this->canProceed = false;
+    this->requestMoment = 0;
+}
+
+void Process::setRequestMoment(int requestMoment) {
+    this->requestMoment = requestMoment;
+}
+
+int Process::getRequestMoment() {
+    return this->requestMoment;
 }
 
 void Process::drawTrashes() {
